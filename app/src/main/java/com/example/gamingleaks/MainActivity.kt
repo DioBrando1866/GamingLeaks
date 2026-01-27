@@ -8,11 +8,15 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
@@ -23,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -31,10 +36,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.example.gamingleaks.ui.theme.DarkBackground
 import com.example.gamingleaks.ui.theme.DarkSurface
@@ -57,71 +65,52 @@ class MainActivity : ComponentActivity() {
                     onSurface = TextWhite
                 )
             ) {
-                // LLAMAMOS AL GESTOR DE NAVEGACIÓN PRINCIPAL
-                NavegacionRoot()
+                val viewModel: NoticiasViewModel = viewModel()
+                NavegacionRoot(viewModel)
             }
         }
     }
 }
 
-// --- GESTOR: SPLASH VS APP ---
 @Composable
-fun NavegacionRoot() {
+fun NavegacionRoot(viewModel: NoticiasViewModel) {
     var showSplash by remember { mutableStateOf(true) }
 
     if (showSplash) {
-        SplashScreen {
-            showSplash = false // Cuando acabe el splash, cambiamos a la app
-        }
+        SplashScreen { showSplash = false }
     } else {
-        MainApp()
+        MainApp(viewModel)
     }
 }
 
-// --- PANTALLA SPLASH SCREEN ---
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
-    // Estado para la animación de escala
     val scale = remember { Animatable(0f) }
 
-    // Efecto que se ejecuta al iniciar la pantalla
     LaunchedEffect(key1 = true) {
-        // 1. Animamos el logo (efecto rebote)
         scale.animateTo(
-            targetValue = 1.2f, // Crece un poco más del tamaño original
+            targetValue = 1.2f,
             animationSpec = tween(
                 durationMillis = 800,
                 easing = { OvershootInterpolator(4f).getInterpolation(it) }
             )
         )
-        // 2. Esperamos un poco (tiempo total del splash: 2 segundos)
         delay(1200L)
-
-        // 3. Avisamos que hemos terminado
         onTimeout()
     }
 
-    // Diseño visual del Splash
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkBackground),
+        modifier = Modifier.fillMaxSize().background(DarkBackground),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Icono animado
             Icon(
-                imageVector = Icons.Default.PlayArrow, // Icono "Gamer"
+                imageVector = Icons.Default.PlayArrow,
                 contentDescription = "Logo",
                 tint = GamingPurple,
-                modifier = Modifier
-                    .size(100.dp)
-                    .scale(scale.value)
+                modifier = Modifier.size(100.dp).scale(scale.value)
             )
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            // Texto
             Text(
                 text = "GAMING LEAKS",
                 color = TextWhite,
@@ -133,43 +122,18 @@ fun SplashScreen(onTimeout: () -> Unit) {
     }
 }
 
-// --- TU APP PRINCIPAL (MainApp) ---
 @Composable
-fun MainApp() {
+fun MainApp(viewModel: NoticiasViewModel) {
     val navController = rememberNavController()
-    val items = listOf("Inicio", "Favoritos", "Ajustes")
-    val icons = listOf(Icons.Default.Home, Icons.Default.Favorite, Icons.Default.Settings)
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute in listOf("Inicio", "Favoritos", "Ajustes")
 
     Scaffold(
         containerColor = DarkBackground,
         bottomBar = {
-            NavigationBar(
-                containerColor = Color(0xFF1F1F1F),
-                contentColor = GamingPurple
-            ) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = navBackStackEntry?.destination?.route
-
-                items.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        icon = { Icon(icons[index], contentDescription = item) },
-                        label = { Text(item) },
-                        selected = currentRoute == item,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = GamingPurple,
-                            selectedTextColor = GamingPurple,
-                            unselectedIconColor = TextGray,
-                            unselectedTextColor = TextGray,
-                            indicatorColor = GamingPurple.copy(alpha = 0.2f)
-                        ),
-                        onClick = {
-                            navController.navigate(item) {
-                                popUpTo(navController.graph.startDestinationId)
-                                launchSingleTop = true
-                            }
-                        }
-                    )
-                }
+            if (showBottomBar) {
+                BottomNavigationBar(navController)
             }
         }
     ) { innerPadding ->
@@ -178,7 +142,22 @@ fun MainApp() {
             startDestination = "Inicio",
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable("Inicio") { PantallaPrincipal() }
+            composable("Inicio") {
+                PantallaPrincipal(viewModel, navController)
+            }
+
+            composable(
+                route = "Detalle/{noticiaId}",
+                arguments = listOf(navArgument("noticiaId") { type = NavType.IntType })
+            ) { backStackEntry ->
+                val noticiaId = backStackEntry.arguments?.getInt("noticiaId") ?: 0
+                val noticiaSeleccionada = viewModel.listaNoticias.find { it.id == noticiaId }
+
+                if (noticiaSeleccionada != null) {
+                    DetalleNoticiaScreen(noticiaSeleccionada, navController)
+                }
+            }
+
             composable("Favoritos") {
                 Box(modifier = Modifier.fillMaxSize().background(DarkBackground), contentAlignment = Alignment.Center) {
                     Text("Favoritos", color = TextWhite)
@@ -193,14 +172,46 @@ fun MainApp() {
     }
 }
 
-// --- PANTALLA PRINCIPAL ---
+@Composable
+fun BottomNavigationBar(navController: NavController) {
+    val items = listOf("Inicio", "Favoritos", "Ajustes")
+    val icons = listOf(Icons.Default.Home, Icons.Default.Favorite, Icons.Default.Settings)
+
+    NavigationBar(
+        containerColor = Color(0xFF1F1F1F),
+        contentColor = GamingPurple
+    ) {
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = navBackStackEntry?.destination?.route
+
+        items.forEachIndexed { index, item ->
+            NavigationBarItem(
+                icon = { Icon(icons[index], contentDescription = item) },
+                label = { Text(item) },
+                selected = currentRoute == item,
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = GamingPurple,
+                    selectedTextColor = GamingPurple,
+                    unselectedIconColor = TextGray,
+                    unselectedTextColor = TextGray,
+                    indicatorColor = GamingPurple.copy(alpha = 0.2f)
+                ),
+                onClick = {
+                    navController.navigate(item) {
+                        popUpTo(navController.graph.startDestinationId)
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PantallaPrincipal(viewModel: NoticiasViewModel = viewModel()) {
+fun PantallaPrincipal(viewModel: NoticiasViewModel, navController: NavController) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkBackground)
+        modifier = Modifier.fillMaxSize().background(DarkBackground)
     ) {
         CenterAlignedTopAppBar(
             title = { Text("GAMING LEAKS", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp) },
@@ -212,9 +223,7 @@ fun PantallaPrincipal(viewModel: NoticiasViewModel = viewModel()) {
         )
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             FilterButton(text = "TODO", color = GamingPurple, onClick = { viewModel.cargarTodas() })
@@ -226,13 +235,96 @@ fun PantallaPrincipal(viewModel: NoticiasViewModel = viewModel()) {
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
             items(viewModel.listaNoticias) { noticia ->
-                ItemNoticia(noticia)
+                ItemNoticia(noticia) {
+                    navController.navigate("Detalle/${noticia.id}")
+                }
             }
         }
     }
 }
 
-// --- BOTÓN FILTRO ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Volver", fontSize = 16.sp) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = TextWhite)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    titleContentColor = TextWhite,
+                    navigationIconContentColor = TextWhite
+                )
+            )
+        },
+        containerColor = DarkBackground
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            Box {
+                AsyncImage(
+                    model = noticia.imagenUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().height(300.dp),
+                    contentScale = ContentScale.Crop
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, DarkBackground)
+                            )
+                        )
+                )
+            }
+
+            Column(modifier = Modifier.padding(20.dp)) {
+                SuggestionChip(
+                    onClick = { },
+                    label = { Text(noticia.categoria) },
+                    colors = SuggestionChipDefaults.suggestionChipColors(
+                        labelColor = if (noticia.categoria == "LEAK") Color(0xFFCF6679) else Color(0xFFFFB74D)
+                    ),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (noticia.categoria == "LEAK") Color(0xFFCF6679) else Color(0xFFFFB74D)
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = noticia.titulo,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = noticia.cuerpo,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextGray,
+                    lineHeight = 28.sp
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun FilterButton(text: String, color: Color, onClick: () -> Unit) {
     Button(
@@ -246,9 +338,8 @@ fun FilterButton(text: String, color: Color, onClick: () -> Unit) {
     }
 }
 
-// --- ITEM NOTICIA ---
 @Composable
-fun ItemNoticia(noticia: Noticia) {
+fun ItemNoticia(noticia: Noticia, onClick: () -> Unit) {
     var isLiked by remember { mutableStateOf(false) }
     var offsetX by remember { mutableFloatStateOf(0f) }
 
@@ -273,7 +364,8 @@ fun ItemNoticia(noticia: Noticia) {
                     onDragCancel = { offsetX = 0f },
                     onHorizontalDrag = { change, dragAmount -> change.consume(); offsetX += dragAmount }
                 )
-            },
+            }
+            .clickable { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(containerColor = DarkSurface)
     ) {
