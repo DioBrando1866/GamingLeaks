@@ -8,12 +8,14 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -290,7 +293,53 @@ fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController) {
                 )
             }
 
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+
+                if (noticia.autor != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(
+                            model = noticia.autor.fotoUrl,
+                            contentDescription = "Autor",
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .border(1.dp, GamingPurple, CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = noticia.autor.nombre,
+                                color = TextWhite,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = noticia.autor.twitter,
+                                color = GamingPurple,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = Color(0xFF2C2C2C))
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                if (noticia.juego != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "🎮", fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${noticia.juego.titulo} - ${noticia.juego.desarrolladora}",
+                            color = TextGray,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
                 SuggestionChip(
                     onClick = { },
                     label = { Text(noticia.categoria) },
@@ -320,6 +369,8 @@ fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController) {
                     color = TextGray,
                     lineHeight = 28.sp
                 )
+
+                Spacer(modifier = Modifier.height(50.dp))
             }
         }
     }
