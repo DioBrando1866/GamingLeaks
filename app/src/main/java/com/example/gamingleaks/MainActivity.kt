@@ -4,8 +4,13 @@ import android.os.Bundle
 import android.view.animation.OvershootInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,27 +18,35 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -53,6 +66,7 @@ import com.example.gamingleaks.ui.theme.GamingPurple
 import com.example.gamingleaks.ui.theme.TextGray
 import com.example.gamingleaks.ui.theme.TextWhite
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -213,6 +227,37 @@ fun BottomNavigationBar(navController: NavController) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantallaPrincipal(viewModel: NoticiasViewModel, navController: NavController) {
+
+    var textoBusqueda by remember { mutableStateOf("") }
+    var categoriaSeleccionada by remember { mutableStateOf("TODO") }
+    var juegoIdSeleccionado by remember { mutableStateOf<Int?>(null) }
+    var autorIdSeleccionado by remember { mutableStateOf<Int?>(null) }
+
+    var mostrarFiltros by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var isRefreshing by remember { mutableStateOf(false) }
+
+    val juegosDisponibles = remember(viewModel.listaNoticias) {
+        viewModel.listaNoticias.mapNotNull { it.juego }.distinctBy { it.id }
+    }
+    val autoresDisponibles = remember(viewModel.listaNoticias) {
+        viewModel.listaNoticias.mapNotNull { it.autor }.distinctBy { it.id }
+    }
+
+    val noticiasParaMostrar = viewModel.listaNoticias.filter { noticia ->
+        val coincideTexto = if (textoBusqueda.isBlank()) true else {
+            noticia.titulo.contains(textoBusqueda, ignoreCase = true) ||
+                    noticia.cuerpo.contains(textoBusqueda, ignoreCase = true)
+        }
+        val coincideCategoria = if (categoriaSeleccionada == "TODO") true else noticia.categoria == categoriaSeleccionada
+        val coincideJuego = if (juegoIdSeleccionado == null) true else noticia.juego?.id == juegoIdSeleccionado
+        val coincideAutor = if (autorIdSeleccionado == null) true else noticia.autor?.id == autorIdSeleccionado
+
+        coincideTexto && coincideCategoria && coincideJuego && coincideAutor
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().background(DarkBackground)
     ) {
@@ -225,21 +270,150 @@ fun PantallaPrincipal(viewModel: NoticiasViewModel, navController: NavController
             )
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+        OutlinedTextField(
+            value = textoBusqueda,
+            onValueChange = {
+                textoBusqueda = it
+                mostrarFiltros = true
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .onFocusChanged { focusState ->
+                    if (focusState.isFocused) {
+                        mostrarFiltros = true
+                    }
+                },
+            placeholder = { Text("Buscar noticia...", color = TextGray) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar", tint = GamingPurple) },
+            trailingIcon = {
+                if (mostrarFiltros) {
+                    IconButton(onClick = {
+                        textoBusqueda = ""
+                        juegoIdSeleccionado = null
+                        autorIdSeleccionado = null
+                        categoriaSeleccionada = "TODO"
+                        mostrarFiltros = false
+                        focusManager.clearFocus()
+                    }) {
+                        Icon(Icons.Default.Close, contentDescription = "Cerrar Filtros", tint = TextGray)
+                    }
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = GamingPurple,
+                unfocusedBorderColor = TextGray,
+                focusedTextColor = TextWhite,
+                unfocusedTextColor = TextWhite,
+                cursorColor = GamingPurple,
+                focusedContainerColor = DarkSurface,
+                unfocusedContainerColor = DarkSurface
+            ),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+
+        AnimatedVisibility(
+            visible = mostrarFiltros,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
         ) {
-            FilterButton(text = "TODO", color = GamingPurple, onClick = { viewModel.cargarTodas() })
-            FilterButton(text = "LEAKS", color = Color(0xFFCF6679), onClick = { viewModel.filtrarPor("LEAK") })
-            FilterButton(text = "DRAMA", color = Color(0xFFFFB74D), onClick = { viewModel.filtrarPor("CONTROVERSIA") })
+            Column(modifier = Modifier.padding(bottom = 8.dp)) {
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    FilterChip(
+                        selected = categoriaSeleccionada == "TODO",
+                        onClick = { categoriaSeleccionada = "TODO" },
+                        label = { Text("Todo") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = GamingPurple)
+                    )
+                    FilterChip(
+                        selected = categoriaSeleccionada == "LEAK",
+                        onClick = { categoriaSeleccionada = "LEAK" },
+                        label = { Text("Leaks") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFCF6679))
+                    )
+                    FilterChip(
+                        selected = categoriaSeleccionada == "CONTROVERSIA",
+                        onClick = { categoriaSeleccionada = "CONTROVERSIA" },
+                        label = { Text("Drama") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFB74D))
+                    )
+                }
+
+                if (juegosDisponibles.isNotEmpty()) {
+                    Text("Filtrar por Juego:", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(juegosDisponibles) { juego ->
+                            FilterChip(
+                                selected = juegoIdSeleccionado == juego.id,
+                                onClick = {
+                                    juegoIdSeleccionado = if (juegoIdSeleccionado == juego.id) null else juego.id
+                                },
+                                label = { Text(juego.titulo) },
+                                leadingIcon = { Text("🎮") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = GamingPurple, labelColor = TextWhite)
+                            )
+                        }
+                    }
+                }
+
+                if (autoresDisponibles.isNotEmpty()) {
+                    Text("Filtrar por Insider:", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(autoresDisponibles) { autor ->
+                            FilterChip(
+                                selected = autorIdSeleccionado == autor.id,
+                                onClick = {
+                                    autorIdSeleccionado = if (autorIdSeleccionado == autor.id) null else autor.id
+                                },
+                                label = { Text(autor.nombre) },
+                                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = GamingPurple, labelColor = TextWhite)
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        LazyColumn(
-            contentPadding = PaddingValues(bottom = 16.dp)
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                coroutineScope.launch {
+                    viewModel.cargarTodas()
+                    delay(1500)
+                    isRefreshing = false
+                }
+            },
+            modifier = Modifier.fillMaxSize()
         ) {
-            items(viewModel.listaNoticias) { noticia ->
-                ItemNoticia(noticia) {
-                    navController.navigate("Detalle/${noticia.id}")
+            LazyColumn(
+                contentPadding = PaddingValues(bottom = 16.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (noticiasParaMostrar.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(50.dp), contentAlignment = Alignment.Center) {
+                            Text("No se encontraron noticias", color = TextGray)
+                        }
+                    }
+                } else {
+                    items(noticiasParaMostrar) { noticia ->
+                        ItemNoticia(noticia) {
+                            navController.navigate("Detalle/${noticia.id}")
+                        }
+                    }
                 }
             }
         }
@@ -373,19 +547,6 @@ fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController) {
                 Spacer(modifier = Modifier.height(50.dp))
             }
         }
-    }
-}
-
-@Composable
-fun FilterButton(text: String, color: Color, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = color.copy(alpha = 0.2f)),
-        border = BorderStroke(1.dp, color),
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.height(36.dp)
-    ) {
-        Text(text, color = color, fontWeight = FontWeight.Bold)
     }
 }
 
