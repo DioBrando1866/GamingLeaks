@@ -4,39 +4,16 @@ import android.os.Bundle
 import android.view.animation.OvershootInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -45,32 +22,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.navigation.*
+import androidx.navigation.compose.*
 import coil.compose.AsyncImage
-import com.example.gamingleaks.ui.theme.DarkBackground
-import com.example.gamingleaks.ui.theme.DarkSurface
-import com.example.gamingleaks.ui.theme.GamingPurple
-import com.example.gamingleaks.ui.theme.TextGray
-import com.example.gamingleaks.ui.theme.TextWhite
+import com.example.gamingleaks.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -217,9 +181,7 @@ fun MainApp(
             }
 
             composable("Favoritos") {
-                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-                    Text("Favoritos", color = MaterialTheme.colorScheme.onBackground)
-                }
+                PantallaFavoritos(viewModel, navController, ajustes)
             }
 
             composable("Ajustes") {
@@ -260,6 +222,301 @@ fun BottomNavigationBar(navController: NavController) {
                     }
                 }
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PantallaFavoritos(viewModel: NoticiasViewModel, navController: NavController, ajustes: AjustesUsuario) {
+    LaunchedEffect(Unit) {
+        viewModel.cargarFavoritos()
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        CenterAlignedTopAppBar(
+            title = { Text("MIS FAVORITOS", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp) },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                titleContentColor = MaterialTheme.colorScheme.primary
+            )
+        )
+
+        if (viewModel.listaFavoritos.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.FavoriteBorder, contentDescription = null, tint = TextGray, modifier = Modifier.size(64.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("No tienes noticias favoritas", color = TextGray)
+                }
+            }
+        } else {
+            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                items(viewModel.listaFavoritos) { noticia ->
+                    ItemNoticia(
+                        noticia = noticia,
+                        isFav = true,
+                        onFavClick = { viewModel.toggleFavorito(noticia) },
+                        ajustes = ajustes,
+                        onClick = { navController.navigate("Detalle/${noticia.id}") }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PantallaPrincipal(viewModel: NoticiasViewModel, navController: NavController, ajustes: AjustesUsuario) {
+
+    var textoBusqueda by remember { mutableStateOf("") }
+    var categoriaSeleccionada by remember { mutableStateOf("TODO") }
+    var juegoIdSeleccionado by remember { mutableStateOf<Int?>(null) }
+    var autorIdSeleccionado by remember { mutableStateOf<Int?>(null) }
+
+    var mostrarFiltros by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val coroutineScope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+
+    val juegosDisponibles = remember(viewModel.listaNoticias) { viewModel.listaNoticias.mapNotNull { it.juego }.distinctBy { it.id } }
+    val autoresDisponibles = remember(viewModel.listaNoticias) { viewModel.listaNoticias.mapNotNull { it.autor }.distinctBy { it.id } }
+
+    val noticiasParaMostrar = viewModel.listaNoticias.filter { noticia ->
+        val coincideTexto = if (textoBusqueda.isBlank()) true else {
+            noticia.titulo.contains(textoBusqueda, ignoreCase = true) || noticia.cuerpo.contains(textoBusqueda, ignoreCase = true)
+        }
+        val coincideCategoria = if (categoriaSeleccionada == "TODO") true else noticia.categoria == categoriaSeleccionada
+        val coincideJuego = if (juegoIdSeleccionado == null) true else noticia.juego?.id == juegoIdSeleccionado
+        val coincideAutor = if (autorIdSeleccionado == null) true else noticia.autor?.id == autorIdSeleccionado
+        coincideTexto && coincideCategoria && coincideJuego && coincideAutor
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        CenterAlignedTopAppBar(
+            title = { Text("GAMING LEAKS", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp) },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                titleContentColor = MaterialTheme.colorScheme.primary,
+                actionIconContentColor = MaterialTheme.colorScheme.onBackground
+            )
+        )
+
+        OutlinedTextField(
+            value = textoBusqueda,
+            onValueChange = { textoBusqueda = it; mostrarFiltros = true },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).onFocusChanged { if (it.isFocused) mostrarFiltros = true },
+            placeholder = { Text("Buscar noticia...", color = TextGray) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar", tint = MaterialTheme.colorScheme.primary) },
+            trailingIcon = {
+                if (mostrarFiltros) {
+                    IconButton(onClick = { textoBusqueda = ""; juegoIdSeleccionado = null; autorIdSeleccionado = null; categoriaSeleccionada = "TODO"; mostrarFiltros = false; focusManager.clearFocus() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Cerrar Filtros", tint = TextGray)
+                    }
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = TextGray,
+                focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
+                cursorColor = MaterialTheme.colorScheme.primary,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+            ),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+
+        AnimatedVisibility(
+            visible = mostrarFiltros,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    FilterChip(selected = categoriaSeleccionada == "TODO", onClick = { categoriaSeleccionada = "TODO" }, label = { Text("Todo") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary))
+                    FilterChip(selected = categoriaSeleccionada == "LEAK", onClick = { categoriaSeleccionada = "LEAK" }, label = { Text("Leaks") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = if(ajustes.altoContraste) Color.Red else Color(0xFFCF6679)))
+                    FilterChip(selected = categoriaSeleccionada == "CONTROVERSIA", onClick = { categoriaSeleccionada = "CONTROVERSIA" }, label = { Text("Drama") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = if(ajustes.altoContraste) Color.Magenta else Color(0xFFFFB74D)))
+                }
+
+                if (juegosDisponibles.isNotEmpty()) {
+                    Text("Filtrar por Juego:", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(juegosDisponibles) { juego ->
+                            FilterChip(
+                                selected = juegoIdSeleccionado == juego.id,
+                                onClick = { juegoIdSeleccionado = if (juegoIdSeleccionado == juego.id) null else juego.id },
+                                label = { Text(juego.titulo) },
+                                leadingIcon = { Text("🎮") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary, labelColor = MaterialTheme.colorScheme.onBackground)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                coroutineScope.launch {
+                    viewModel.cargarTodas()
+                    viewModel.cargarFavoritos()
+                    delay(1500)
+                    isRefreshing = false
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
+                if (noticiasParaMostrar.isEmpty()) {
+                    item { Box(modifier = Modifier.fillMaxWidth().padding(50.dp), contentAlignment = Alignment.Center) { Text("No se encontraron noticias", color = TextGray) } }
+                } else {
+                    items(noticiasParaMostrar) { noticia ->
+                        ItemNoticia(
+                            noticia = noticia,
+                            isFav = viewModel.esFavorita(noticia),
+                            onFavClick = { viewModel.toggleFavorito(noticia) },
+                            ajustes = ajustes,
+                            onClick = { navController.navigate("Detalle/${noticia.id}") }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+@Composable
+fun ItemNoticia(
+    noticia: Noticia,
+    isFav: Boolean,
+    onFavClick: () -> Unit,
+    ajustes: AjustesUsuario,
+    onClick: () -> Unit
+) {
+    var offsetX by remember { mutableFloatStateOf(0f) }
+
+    val colorCorazon = if (isFav) Color(0xFFCF6679) else TextGray
+    val sizeCorazon = if (isFav && !ajustes.reducirMovimiento) 1.2f else 1.0f
+
+    val infiniteTransition = rememberInfiniteTransition(label = "Infinite")
+    val alphaAnim by if (!ajustes.reducirMovimiento) {
+        infiniteTransition.animateFloat(
+            initialValue = 1f, targetValue = 0.2f,
+            animationSpec = infiniteRepeatable(animation = tween(1000), repeatMode = RepeatMode.Reverse), label = "Alpha"
+        )
+    } else {
+        remember { mutableFloatStateOf(1f) }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .offset { IntOffset(offsetX.roundToInt(), 0) }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { offsetX = 0f },
+                    onDragCancel = { offsetX = 0f },
+                    onHorizontalDrag = { change, dragAmount -> change.consume(); offsetX += dragAmount }
+                )
+            }
+            .clickable(onClickLabel = "Ver detalles de ${noticia.titulo}") { onClick() },
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column {
+            if (ajustes.mostrarImagenes) {
+                Box {
+                    AsyncImage(
+                        model = noticia.imagenUrl,
+                        contentDescription = "Imagen de noticia: ${noticia.titulo}",
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        contentScale = ContentScale.Crop
+                    )
+                    if (noticia.categoria == "LEAK") {
+                        Surface(color = Color.Red.copy(alpha = 0.85f * alphaAnim), shape = MaterialTheme.shapes.extraSmall, modifier = Modifier.padding(12.dp)) {
+                            Text("🔴 LIVE LEAK", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxWidth().height(10.dp).background(if (noticia.categoria == "LEAK") Color.Red else Color.Gray))
+            }
+
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    SuggestionChip(
+                        onClick = { },
+                        label = { Text(noticia.categoria) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(labelColor = if (noticia.categoria == "LEAK") Color(0xFFCF6679) else Color(0xFFFFB74D))
+                    )
+                    IconToggleButton(checked = isFav, onCheckedChange = { onFavClick() }) {
+                        Icon(imageVector = if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = if (isFav) "Quitar me gusta" else "Dar me gusta", tint = colorCorazon, modifier = Modifier.scale(sizeCorazon))
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = noticia.titulo, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = noticia.cuerpo, style = MaterialTheme.typography.bodyMedium, color = TextGray, maxLines = 3)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController, ajustes: AjustesUsuario) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Volver", fontSize = 16.sp) },
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver atrás", tint = MaterialTheme.colorScheme.onBackground) } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground)
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        Column(modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+            if (ajustes.mostrarImagenes) {
+                Box {
+                    AsyncImage(model = noticia.imagenUrl, contentDescription = "Imagen detallada de ${noticia.titulo}", modifier = Modifier.fillMaxWidth().height(300.dp), contentScale = ContentScale.Crop)
+                    Box(modifier = Modifier.fillMaxWidth().height(100.dp).align(Alignment.BottomCenter).background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
+                }
+            }
+
+            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                if (noticia.autor != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (ajustes.mostrarImagenes) {
+                            AsyncImage(model = noticia.autor.fotoUrl, contentDescription = "Foto de perfil de ${noticia.autor.nombre}", modifier = Modifier.size(50.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.primary, CircleShape), contentScale = ContentScale.Crop)
+                            Spacer(modifier = Modifier.width(12.dp))
+                        }
+                        Column {
+                            Text(text = noticia.autor.nombre, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text(text = noticia.autor.twitter, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp)); HorizontalDivider(color = Color(0xFF2C2C2C)); Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                if (noticia.juego != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "🎮", fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "${noticia.juego.titulo} - ${noticia.juego.desarrolladora}", color = TextGray, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                Text(text = noticia.titulo, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(text = noticia.cuerpo, style = MaterialTheme.typography.bodyLarge, color = TextGray, lineHeight = 28.sp)
+                Spacer(modifier = Modifier.height(50.dp))
+            }
         }
     }
 }
@@ -403,244 +660,6 @@ fun SettingItemSlider(
                 )
             )
             Text("A", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-        }
-    }
-}
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PantallaPrincipal(viewModel: NoticiasViewModel, navController: NavController, ajustes: AjustesUsuario) {
-
-    var textoBusqueda by remember { mutableStateOf("") }
-    var categoriaSeleccionada by remember { mutableStateOf("TODO") }
-    var juegoIdSeleccionado by remember { mutableStateOf<Int?>(null) }
-    var autorIdSeleccionado by remember { mutableStateOf<Int?>(null) }
-
-    var mostrarFiltros by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    val coroutineScope = rememberCoroutineScope()
-    var isRefreshing by remember { mutableStateOf(false) }
-
-    val juegosDisponibles = remember(viewModel.listaNoticias) { viewModel.listaNoticias.mapNotNull { it.juego }.distinctBy { it.id } }
-    val autoresDisponibles = remember(viewModel.listaNoticias) { viewModel.listaNoticias.mapNotNull { it.autor }.distinctBy { it.id } }
-
-    val noticiasParaMostrar = viewModel.listaNoticias.filter { noticia ->
-        val coincideTexto = if (textoBusqueda.isBlank()) true else {
-            noticia.titulo.contains(textoBusqueda, ignoreCase = true) || noticia.cuerpo.contains(textoBusqueda, ignoreCase = true)
-        }
-        val coincideCategoria = if (categoriaSeleccionada == "TODO") true else noticia.categoria == categoriaSeleccionada
-        val coincideJuego = if (juegoIdSeleccionado == null) true else noticia.juego?.id == juegoIdSeleccionado
-        val coincideAutor = if (autorIdSeleccionado == null) true else noticia.autor?.id == autorIdSeleccionado
-        coincideTexto && coincideCategoria && coincideJuego && coincideAutor
-    }
-
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        CenterAlignedTopAppBar(
-            title = { Text("GAMING LEAKS", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp) },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background,
-                titleContentColor = MaterialTheme.colorScheme.primary,
-                actionIconContentColor = MaterialTheme.colorScheme.onBackground
-            )
-        )
-
-        OutlinedTextField(
-            value = textoBusqueda,
-            onValueChange = { textoBusqueda = it; mostrarFiltros = true },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).onFocusChanged { if (it.isFocused) mostrarFiltros = true },
-            placeholder = { Text("Buscar noticia...", color = TextGray) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar", tint = MaterialTheme.colorScheme.primary) },
-            trailingIcon = {
-                if (mostrarFiltros) {
-                    IconButton(onClick = { textoBusqueda = ""; juegoIdSeleccionado = null; autorIdSeleccionado = null; categoriaSeleccionada = "TODO"; mostrarFiltros = false; focusManager.clearFocus() }) {
-                        Icon(Icons.Default.Close, contentDescription = "Cerrar Filtros", tint = TextGray)
-                    }
-                }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = TextGray,
-                focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
-                cursorColor = MaterialTheme.colorScheme.primary,
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface
-            ),
-            shape = RoundedCornerShape(12.dp),
-            singleLine = true
-        )
-
-        AnimatedVisibility(
-            visible = mostrarFiltros,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    FilterChip(selected = categoriaSeleccionada == "TODO", onClick = { categoriaSeleccionada = "TODO" }, label = { Text("Todo") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary))
-                    FilterChip(selected = categoriaSeleccionada == "LEAK", onClick = { categoriaSeleccionada = "LEAK" }, label = { Text("Leaks") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = if(ajustes.altoContraste) Color.Red else Color(0xFFCF6679)))
-                    FilterChip(selected = categoriaSeleccionada == "CONTROVERSIA", onClick = { categoriaSeleccionada = "CONTROVERSIA" }, label = { Text("Drama") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = if(ajustes.altoContraste) Color.Magenta else Color(0xFFFFB74D)))
-                }
-
-                if (juegosDisponibles.isNotEmpty()) {
-                    Text("Filtrar por Juego:", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
-                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(juegosDisponibles) { juego ->
-                            FilterChip(
-                                selected = juegoIdSeleccionado == juego.id,
-                                onClick = { juegoIdSeleccionado = if (juegoIdSeleccionado == juego.id) null else juego.id },
-                                label = { Text(juego.titulo) },
-                                leadingIcon = { Text("🎮") },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary, labelColor = MaterialTheme.colorScheme.onBackground)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = { isRefreshing = true; coroutineScope.launch { viewModel.cargarTodas(); delay(1500); isRefreshing = false } },
-            modifier = Modifier.fillMaxSize()
-        ) {
-            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
-                if (noticiasParaMostrar.isEmpty()) {
-                    item { Box(modifier = Modifier.fillMaxWidth().padding(50.dp), contentAlignment = Alignment.Center) { Text("No se encontraron noticias", color = TextGray) } }
-                } else {
-                    items(noticiasParaMostrar) { noticia ->
-                        ItemNoticia(noticia, ajustes) { navController.navigate("Detalle/${noticia.id}") }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ItemNoticia(noticia: Noticia, ajustes: AjustesUsuario, onClick: () -> Unit) {
-    var isLiked by remember { mutableStateOf(false) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-
-    val colorCorazon = if (isLiked) Color(0xFFCF6679) else TextGray
-    val sizeCorazon = if (isLiked && !ajustes.reducirMovimiento) 1.2f else 1.0f
-
-    val infiniteTransition = rememberInfiniteTransition(label = "Infinite")
-    val alphaAnim by if (!ajustes.reducirMovimiento) {
-        infiniteTransition.animateFloat(
-            initialValue = 1f, targetValue = 0.2f,
-            animationSpec = infiniteRepeatable(animation = tween(1000), repeatMode = RepeatMode.Reverse), label = "Alpha"
-        )
-    } else {
-        remember { mutableFloatStateOf(1f) }
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-            .offset { IntOffset(offsetX.roundToInt(), 0) }
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragEnd = { offsetX = 0f },
-                    onDragCancel = { offsetX = 0f },
-                    onHorizontalDrag = { change, dragAmount -> change.consume(); offsetX += dragAmount }
-                )
-            }
-            .clickable(onClickLabel = "Ver detalles de ${noticia.titulo}") { onClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column {
-            if (ajustes.mostrarImagenes) {
-                Box {
-                    AsyncImage(
-                        model = noticia.imagenUrl,
-                        contentDescription = "Imagen de noticia: ${noticia.titulo}",
-                        modifier = Modifier.fillMaxWidth().height(200.dp),
-                        contentScale = ContentScale.Crop
-                    )
-                    if (noticia.categoria == "LEAK") {
-                        Surface(color = Color.Red.copy(alpha = 0.85f * alphaAnim), shape = MaterialTheme.shapes.extraSmall, modifier = Modifier.padding(12.dp)) {
-                            Text("🔴 LIVE LEAK", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            } else {
-                Box(modifier = Modifier.fillMaxWidth().height(10.dp).background(if (noticia.categoria == "LEAK") Color.Red else Color.Gray))
-            }
-
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    SuggestionChip(
-                        onClick = { },
-                        label = { Text(noticia.categoria) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(labelColor = if (noticia.categoria == "LEAK") Color(0xFFCF6679) else Color(0xFFFFB74D))
-                    )
-                    IconToggleButton(checked = isLiked, onCheckedChange = { isLiked = !isLiked }) {
-                        Icon(imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = if (isLiked) "Quitar me gusta" else "Dar me gusta", tint = colorCorazon, modifier = Modifier.scale(sizeCorazon))
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = noticia.titulo, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = noticia.cuerpo, style = MaterialTheme.typography.bodyMedium, color = TextGray, maxLines = 3)
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController, ajustes: AjustesUsuario) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Volver", fontSize = 16.sp) },
-                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver atrás", tint = MaterialTheme.colorScheme.onBackground) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground)
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
-            if (ajustes.mostrarImagenes) {
-                Box {
-                    AsyncImage(model = noticia.imagenUrl, contentDescription = "Imagen detallada de ${noticia.titulo}", modifier = Modifier.fillMaxWidth().height(300.dp), contentScale = ContentScale.Crop)
-                    Box(modifier = Modifier.fillMaxWidth().height(100.dp).align(Alignment.BottomCenter).background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
-                }
-            }
-
-            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                if (noticia.autor != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (ajustes.mostrarImagenes) {
-                            AsyncImage(model = noticia.autor.fotoUrl, contentDescription = "Foto de perfil de ${noticia.autor.nombre}", modifier = Modifier.size(50.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.primary, CircleShape), contentScale = ContentScale.Crop)
-                            Spacer(modifier = Modifier.width(12.dp))
-                        }
-                        Column {
-                            Text(text = noticia.autor.nombre, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text(text = noticia.autor.twitter, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp)); HorizontalDivider(color = Color(0xFF2C2C2C)); Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                if (noticia.juego != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "🎮", fontSize = 20.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "${noticia.juego.titulo} - ${noticia.juego.desarrolladora}", color = TextGray, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                Text(text = noticia.titulo, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(text = noticia.cuerpo, style = MaterialTheme.typography.bodyLarge, color = TextGray, lineHeight = 28.sp)
-                Spacer(modifier = Modifier.height(50.dp))
-            }
         }
     }
 }
