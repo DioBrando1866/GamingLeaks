@@ -7,9 +7,10 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,7 +25,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -37,7 +37,6 @@ import coil.compose.AsyncImage
 import com.example.gamingleaks.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 data class AjustesUsuario(
     val escalaTexto: Float = 1.0f,
@@ -147,25 +146,58 @@ fun MainApp(
     onAjustesChanged: (AjustesUsuario) -> Unit
 ) {
     val navController = rememberNavController()
+    val tabs = listOf("Inicio", "Favoritos", "Ajustes")
+    val pagerState = rememberPagerState(pageCount = { tabs.size })
+    val coroutineScope = rememberCoroutineScope()
+
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
-    val showBottomBar = currentRoute in listOf("Inicio", "Favoritos", "Ajustes")
+    val currentRoute = navBackStackEntry?.destination?.route ?: "Tabs"
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            if (showBottomBar) {
-                BottomNavigationBar(navController)
+            if (currentRoute == "Tabs") {
+                NavigationBar(
+                    containerColor = Color(0xFF1F1F1F),
+                    contentColor = MaterialTheme.colorScheme.primary
+                ) {
+                    val icons = listOf(Icons.Default.Home, Icons.Default.Favorite, Icons.Default.Settings)
+                    tabs.forEachIndexed { index, item ->
+                        NavigationBarItem(
+                            icon = { Icon(icons[index], contentDescription = "Ir a $item") },
+                            label = { Text(item) },
+                            selected = pagerState.currentPage == index,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                unselectedIconColor = TextGray,
+                                unselectedTextColor = TextGray,
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                            ),
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = "Inicio",
+            startDestination = "Tabs",
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable("Inicio") {
-                PantallaPrincipal(viewModel, navController, ajustes)
+            composable("Tabs") {
+                HorizontalPager(state = pagerState) { page ->
+                    when (tabs[page]) {
+                        "Inicio" -> PantallaPrincipal(viewModel, navController, ajustes)
+                        "Favoritos" -> PantallaFavoritos(viewModel, navController, ajustes)
+                        "Ajustes" -> PantallaAjustes(ajustes, onAjustesChanged)
+                    }
+                }
             }
 
             composable(
@@ -177,89 +209,6 @@ fun MainApp(
 
                 if (noticiaSeleccionada != null) {
                     DetalleNoticiaScreen(noticiaSeleccionada, navController, ajustes)
-                }
-            }
-
-            composable("Favoritos") {
-                PantallaFavoritos(viewModel, navController, ajustes)
-            }
-
-            composable("Ajustes") {
-                PantallaAjustes(ajustes, onAjustesChanged)
-            }
-        }
-    }
-}
-
-@Composable
-fun BottomNavigationBar(navController: NavController) {
-    val items = listOf("Inicio", "Favoritos", "Ajustes")
-    val icons = listOf(Icons.Default.Home, Icons.Default.Favorite, Icons.Default.Settings)
-
-    NavigationBar(
-        containerColor = Color(0xFF1F1F1F),
-        contentColor = MaterialTheme.colorScheme.primary
-    ) {
-        val navBackStackEntry by navController.currentBackStackEntryAsState()
-        val currentRoute = navBackStackEntry?.destination?.route
-
-        items.forEachIndexed { index, item ->
-            NavigationBarItem(
-                icon = { Icon(icons[index], contentDescription = "Ir a $item") },
-                label = { Text(item) },
-                selected = currentRoute == item,
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    unselectedIconColor = TextGray,
-                    unselectedTextColor = TextGray,
-                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                ),
-                onClick = {
-                    navController.navigate(item) {
-                        popUpTo(navController.graph.startDestinationId)
-                        launchSingleTop = true
-                    }
-                }
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PantallaFavoritos(viewModel: NoticiasViewModel, navController: NavController, ajustes: AjustesUsuario) {
-    LaunchedEffect(Unit) {
-        viewModel.cargarFavoritos()
-    }
-
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        CenterAlignedTopAppBar(
-            title = { Text("MIS FAVORITOS", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp) },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background,
-                titleContentColor = MaterialTheme.colorScheme.primary
-            )
-        )
-
-        if (viewModel.listaFavoritos.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.FavoriteBorder, contentDescription = null, tint = TextGray, modifier = Modifier.size(64.dp))
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("No tienes noticias favoritas", color = TextGray)
-                }
-            }
-        } else {
-            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-                items(viewModel.listaFavoritos) { noticia ->
-                    ItemNoticia(
-                        noticia = noticia,
-                        isFav = true,
-                        onFavClick = { viewModel.toggleFavorito(noticia) },
-                        ajustes = ajustes,
-                        onClick = { navController.navigate("Detalle/${noticia.id}") }
-                    )
                 }
             }
         }
@@ -281,7 +230,6 @@ fun PantallaPrincipal(viewModel: NoticiasViewModel, navController: NavController
     var isRefreshing by remember { mutableStateOf(false) }
 
     val juegosDisponibles = remember(viewModel.listaNoticias) { viewModel.listaNoticias.mapNotNull { it.juego }.distinctBy { it.id } }
-    val autoresDisponibles = remember(viewModel.listaNoticias) { viewModel.listaNoticias.mapNotNull { it.autor }.distinctBy { it.id } }
 
     val noticiasParaMostrar = viewModel.listaNoticias.filter { noticia ->
         val coincideTexto = if (textoBusqueda.isBlank()) true else {
@@ -389,6 +337,114 @@ fun PantallaPrincipal(viewModel: NoticiasViewModel, navController: NavController
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PantallaFavoritos(viewModel: NoticiasViewModel, navController: NavController, ajustes: AjustesUsuario) {
+    LaunchedEffect(Unit) {
+        viewModel.cargarFavoritos()
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        CenterAlignedTopAppBar(
+            title = { Text("MIS FAVORITOS", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp) },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                titleContentColor = MaterialTheme.colorScheme.primary
+            )
+        )
+
+        if (viewModel.listaFavoritos.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.FavoriteBorder, contentDescription = null, tint = TextGray, modifier = Modifier.size(64.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("No tienes noticias favoritas", color = TextGray)
+                }
+            }
+        } else {
+            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                items(viewModel.listaFavoritos) { noticia ->
+                    ItemNoticia(
+                        noticia = noticia,
+                        isFav = true,
+                        onFavClick = { viewModel.toggleFavorito(noticia) },
+                        ajustes = ajustes,
+                        onClick = { navController.navigate("Detalle/${noticia.id}") }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PantallaAjustes(
+    ajustes: AjustesUsuario,
+    onAjustesChanged: (AjustesUsuario) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
+    ) {
+        CenterAlignedTopAppBar(
+            title = { Text("Accesibilidad y Diseño", fontWeight = FontWeight.Bold) },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                titleContentColor = MaterialTheme.colorScheme.primary
+            )
+        )
+
+        SectionTitle("Visualización")
+        SettingItemSlider(
+            title = "Tamaño del Texto",
+            description = "Ajusta el tamaño para mejorar la lectura",
+            value = ajustes.escalaTexto,
+            valueRange = 0.8f..1.5f,
+            onValueChange = { onAjustesChanged(ajustes.copy(escalaTexto = it)) }
+        )
+        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+        SettingItemSwitch(
+            title = "Alto Contraste",
+            description = "Colores vivos y fondo negro puro",
+            checked = ajustes.altoContraste,
+            icon = Icons.Default.Info,
+            onCheckedChange = { onAjustesChanged(ajustes.copy(altoContraste = it)) }
+        )
+
+        SectionTitle("Contenido")
+        SettingItemSwitch(
+            title = "Mostrar Imágenes",
+            description = "Desactiva para modo solo lectura o ahorro de datos",
+            checked = ajustes.mostrarImagenes,
+            icon = Icons.Default.Home,
+            onCheckedChange = { onAjustesChanged(ajustes.copy(mostrarImagenes = it)) }
+        )
+        SettingItemSwitch(
+            title = "Reducir Movimiento",
+            description = "Elimina animaciones innecesarias",
+            checked = ajustes.reducirMovimiento,
+            icon = Icons.Default.PlayArrow,
+            onCheckedChange = { onAjustesChanged(ajustes.copy(reducirMovimiento = it)) }
+        )
+
+        Spacer(modifier = Modifier.height(30.dp))
+        Card(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Vista Previa", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Así se verá el texto de las noticias con tu configuración actual.", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
 @Composable
 fun ItemNoticia(
     noticia: Noticia,
@@ -397,8 +453,6 @@ fun ItemNoticia(
     ajustes: AjustesUsuario,
     onClick: () -> Unit
 ) {
-    var offsetX by remember { mutableFloatStateOf(0f) }
-
     val colorCorazon = if (isFav) Color(0xFFCF6679) else TextGray
     val sizeCorazon = if (isFav && !ajustes.reducirMovimiento) 1.2f else 1.0f
 
@@ -416,14 +470,6 @@ fun ItemNoticia(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp)
-            .offset { IntOffset(offsetX.roundToInt(), 0) }
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragEnd = { offsetX = 0f },
-                    onDragCancel = { offsetX = 0f },
-                    onHorizontalDrag = { change, dragAmount -> change.consume(); offsetX += dragAmount }
-                )
-            }
             .clickable(onClickLabel = "Ver detalles de ${noticia.titulo}") { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -439,7 +485,7 @@ fun ItemNoticia(
                     )
                     if (noticia.categoria == "LEAK") {
                         Surface(color = Color.Red.copy(alpha = 0.85f * alphaAnim), shape = MaterialTheme.shapes.extraSmall, modifier = Modifier.padding(12.dp)) {
-                            Text("🔴 LIVE LEAK", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text("LIVE LEAK", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -487,7 +533,6 @@ fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController, ajustes
                     Box(modifier = Modifier.fillMaxWidth().height(100.dp).align(Alignment.BottomCenter).background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
                 }
             }
-
             Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                 if (noticia.autor != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -502,16 +547,13 @@ fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController, ajustes
                     }
                     Spacer(modifier = Modifier.height(16.dp)); HorizontalDivider(color = Color(0xFF2C2C2C)); Spacer(modifier = Modifier.height(16.dp))
                 }
-
                 if (noticia.juego != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "🎮", fontSize = 20.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(text = "${noticia.juego.titulo} - ${noticia.juego.desarrolladora}", color = TextGray, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
-
                 Text(text = noticia.titulo, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(text = noticia.cuerpo, style = MaterialTheme.typography.bodyLarge, color = TextGray, lineHeight = 28.sp)
@@ -521,144 +563,27 @@ fun DetalleNoticiaScreen(noticia: Noticia, navController: NavController, ajustes
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PantallaAjustes(
-    ajustes: AjustesUsuario,
-    onAjustesChanged: (AjustesUsuario) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-    ) {
-        CenterAlignedTopAppBar(
-            title = { Text("Accesibilidad y Diseño", fontWeight = FontWeight.Bold) },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background,
-                titleContentColor = MaterialTheme.colorScheme.primary
-            )
-        )
-
-        SectionTitle("Visualización")
-
-        SettingItemSlider(
-            title = "Tamaño del Texto",
-            description = "Ajusta el tamaño para mejorar la lectura",
-            value = ajustes.escalaTexto,
-            valueRange = 0.8f..1.5f,
-            onValueChange = { onAjustesChanged(ajustes.copy(escalaTexto = it)) }
-        )
-
-        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-
-        SettingItemSwitch(
-            title = "Alto Contraste",
-            description = "Colores vivos y fondo negro puro",
-            checked = ajustes.altoContraste,
-            icon = Icons.Default.Info,
-            onCheckedChange = { onAjustesChanged(ajustes.copy(altoContraste = it)) }
-        )
-
-        SectionTitle("Contenido")
-
-        SettingItemSwitch(
-            title = "Mostrar Imágenes",
-            description = "Desactiva para modo solo lectura o ahorro de datos",
-            checked = ajustes.mostrarImagenes,
-            icon = Icons.Default.Home,
-            onCheckedChange = { onAjustesChanged(ajustes.copy(mostrarImagenes = it)) }
-        )
-
-        SettingItemSwitch(
-            title = "Reducir Movimiento",
-            description = "Elimina animaciones innecesarias",
-            checked = ajustes.reducirMovimiento,
-            icon = Icons.Default.PlayArrow,
-            onCheckedChange = { onAjustesChanged(ajustes.copy(reducirMovimiento = it)) }
-        )
-
-        Spacer(modifier = Modifier.height(30.dp))
-
-        Card(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Vista Previa", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Así se verá el texto de las noticias con tu configuración actual.", style = MaterialTheme.typography.bodyLarge)
-            }
-        }
-    }
+@Composable fun SectionTitle(text: String) {
+    Text(text = text, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp), fontSize = 18.sp)
 }
 
-@Composable
-fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
-        fontSize = 18.sp
-    )
-}
-
-@Composable
-fun SettingItemSwitch(
-    title: String,
-    description: String,
-    checked: Boolean,
-    icon: ImageVector,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+@Composable fun SettingItemSwitch(title: String, description: String, checked: Boolean, icon: ImageVector, onCheckedChange: (Boolean) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
             Text(text = description, fontSize = 14.sp, color = TextGray)
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-            )
-        )
+        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
     }
 }
 
-@Composable
-fun SettingItemSlider(
-    title: String,
-    description: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit
-) {
+@Composable fun SettingItemSlider(title: String, description: String, value: Float, valueRange: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
     Column(modifier = Modifier.padding(16.dp)) {
         Text(text = title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
         Text(text = description, fontSize = 14.sp, color = TextGray)
-
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("A", fontSize = 12.sp, color = TextGray)
-            Slider(
-                value = value,
-                onValueChange = onValueChange,
-                valueRange = valueRange,
-                modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary
-                )
-            )
+            Slider(value = value, onValueChange = onValueChange, valueRange = valueRange, modifier = Modifier.weight(1f).padding(horizontal = 10.dp), colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary))
             Text("A", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
         }
     }
